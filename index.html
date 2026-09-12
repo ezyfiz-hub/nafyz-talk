@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="ms" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NaFyzTalk - Connect. Chat. Talk. Anywhere.</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Custom Scrollbar for minimalistic look */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Audio Player Styling */
+        audio { height: 36px; outline: none; border-radius: 9999px; }
+        
+        /* Video object fit */
+        video { object-fit: cover; background-color: #1a1a1a; }
+        
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .msg-enter { animation: fadeIn 0.3s ease-out forwards; }
+        
+        .recording-pulse { animation: pulse-red 1.5s infinite; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { primary: '#3b82f6' } } }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans h-screen flex flex-col overflow-hidden transition-colors duration-200">
+
+    <header class="bg-white dark:bg-gray-800 shadow-sm z-10 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-gray-700">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 text-white p-2 rounded-lg">
+                <i class="fas fa-comments text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-xl leading-tight">NaFyzTalk</h1>
+                <p class="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">Connect. Chat. Talk. Anywhere.</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-sm">
+                <div id="conn-status-dot" class="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+                <span id="conn-status-text" class="text-gray-600 dark:text-gray-300 font-medium">Connecting...</span>
+            </div>
+            <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+            <div class="flex items-center gap-2 cursor-pointer group" onclick="promptRename()">
+                <i class="fas fa-user-circle text-gray-400 group-hover:text-blue-500 text-lg"></i>
+                <span id="my-name-display" class="font-semibold text-sm">Loading...</span>
+            </div>
+            <button onclick="toggleDarkMode()" class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+                <i id="theme-icon" class="fas fa-moon"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar (Online Users) -->
+        <aside id="sidebar" class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col hidden sm:flex transition-all">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h2 class="font-bold text-gray-700 dark:text-gray-200"><i class="fas fa-users mr-2"></i>Online (<span id="online-count">0</span>)</h2>
+            </div>
+            <div id="users-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <!-- User items injected here -->
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="flex-1 flex flex-col relative bg-gray-50 dark:bg-gray-900">
+            <!-- Mobile Sidebar Toggle -->
+            <div class="sm:hidden bg-white dark:bg-gray-800 p-2 border-b border-gray-200 dark:border-gray-700 text-center">
+                <button onclick="toggleMobileSidebar()" class="text-sm font-medium text-blue-600 dark:text-blue-400">
+                    <i class="fas fa-users mr-1"></i> View Online Users (<span id="mobile-online-count">0</span>)
+                </button>
+            </div>
+
+            <!-- Messages Container -->
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Welcome Message -->
+                <div class="text-center my-4">
+                    <span class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs font-medium px-2.5 py-0.5 rounded">Welcome to NaFyzTalk Public Room</span>
+                    <p class="text-xs text-gray-500 mt-2">Messages are not permanently saved. No login required.</p>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+                
+                <!-- File Upload Progress (Hidden by default) -->
+                <div id="upload-progress-container" class="hidden w-full bg-gray-200 rounded-full h-1.5 mb-2 dark:bg-gray-700">
+                    <div id="upload-progress-bar" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
+                </div>
+
+                <div class="flex items-end gap-2 relative">
+                    <!-- File Button -->
+                    <button onclick="document.getElementById('file-input').click()" class="p-3 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors flex-shrink-0" title="Share File">
+                        <i class="fas fa-paperclip text-lg"></i>
+                    </button>
+                    <input type="file" id="file-input" class="hidden" onchange="handleFileUpload(event)">
+
+                    <!-- Text Area -->
+                    <textarea id="message-input" rows="1" placeholder="Type a message... (Shift+Enter for new line)" class="w-full bg-gray-100 dark:bg-gray-700 border-0 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none text-sm dark:text-white" onkeydown="handleKeydown(event)"></textarea>
+
+                    <!-- Mic Button -->
+                    <button id="mic-btn" class="p-3 text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors flex-shrink-0" title="Hold to Record Audio">
+                        <i class="fas fa-microphone text-lg"></i>
+                    </button>
+
+                    <!-- Send Button -->
+                    <button onclick="sendTextMessage()" class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-colors flex-shrink-0 shadow-md">
+                        <i class="fas fa-paper-plane text-lg translate-x-[-1px] translate-y-[1px]"></i>
+                    </button>
+                </div>
+                <!-- Recording Indicator -->
+                <div id="recording-indicator" class="hidden text-xs text-red-500 font-medium mt-1 text-center animate-pulse">
+                    <i class="fas fa-circle text-[8px] mr-1"></i> Recording audio... Release mic to send.
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Incoming Call Modal -->
+    <div id="incoming-call-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center transform scale-100 transition-transform">
+            <div class="w-20 h-20 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                <i id="incoming-call-icon" class="fas fa-phone text-3xl text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-1" id="incoming-caller-name">Caller Name</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6" id="incoming-call-type">Incoming Voice Call...</p>
+            <div class="flex justify-center gap-4">
+                <button onclick="rejectCall()" class="w-14 h-14 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors">
+                    <i class="fas fa-phone-slash text-xl"></i>
+                </button>
+                <button onclick="acceptCall()" class="w-14 h-14 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors recording-pulse">
+                    <i class="fas fa-phone text-xl"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Call UI Modal (Voice & Video) -->
+    <div id="active-call-modal" class="hidden fixed inset-0 bg-gray-900 z-50 flex flex-col">
+        <!-- Header -->
+        <div class="p-4 bg-gray-900/80 text-white flex justify-between items-center absolute top-0 w-full z-10">
+            <div>
+                <h3 class="font-bold text-lg" id="active-call-name">Calling...</h3>
+                <span class="text-xs text-green-400" id="active-call-status">Connecting</span>
+            </div>
+            <span id="call-timer" class="font-mono bg-black/50 px-2 py-1 rounded">00:00</span>
+        </div>
+        
+        <!-- Video Containers -->
+        <div class="flex-1 relative flex items-center justify-center bg-black">
+            <!-- Remote Video (Big) -->
+            <video id="remote-video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+            
+            <!-- Audio Only Placeholder -->
+            <div id="audio-call-placeholder" class="text-center text-gray-400">
+                <div class="w-32 h-32 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-gray-700">
+                    <i class="fas fa-user text-6xl"></i>
+                </div>
+                <p class="text-xl">Voice Call</p>
+            </div>
+
+            <!-- Local Video (Picture in Picture) -->
+            <video id="local-video" autoplay playsinline muted class="hidden absolute bottom-24 right-4 w-28 h-40 bg-gray-800 rounded-lg shadow-xl border-2 border-gray-600 object-cover z-20"></video>
+        </div>
+
+        <!-- Call Controls -->
+        <div class="p-6 bg-gray-900/90 pb-8 flex justify-center gap-6 absolute bottom-0 w-full z-10">
+            <button id="btn-toggle-mic" onclick="toggleMic()" class="w-14 h-14 bg-gray-700 hover:bg-gray-600 text-white rounded-full flex items-center justify-center transition-colors">
+                <i class="fas fa-microphone text-xl"></i>
+            </button>
+            <button id="btn-toggle-cam" onclick="toggleCam()" class="w-14 h-14 bg-gray-700 hover:bg-gray-600 text-white rounded-full items-center justify-center transition-colors hidden">
+                <i class="fas fa-video text-xl"></i>
+            </button>
+            <button onclick="endCall()" class="w-16 h-16 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg transition-colors">
+                <i class="fas fa-phone-slash text-2xl"></i>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Application State ---
+        let myId = null;
+        let myName = "";
+        let ws = null;
+        let isDarkMode = document.documentElement.classList.contains('dark');
+        
+        // --- WebRTC State ---
+        let peerConnection = null;
+        let localStream = null;
+        let remoteStream = null;
+        let currentCallTarget = null;
+        let isVideoCall = false;
+        let callTimerInterval = null;
+        let callSeconds = 0;
+        
+        // Use Google's free STUN servers. 
+        // Note: For production NAT traversal, TURN servers (like Twilio or Coturn) are required.
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // --- DOM Elements ---
+        const chatMessages = document.getElementById('chat-messages');
+        const messageInput = document.getElementById('message-input');
+        const usersList = document.getElementById('users-list');
+        const onlineCount = document.getElementById('online-count');
+        const mobileOnlineCount = document.getElementById('mobile-online-count');
+        
+        // --- Init WebSocket ---
+        function initWebSocket() {
+            const statusDot = document.getElementById('conn-status-dot');
+            const statusText = document.getElementById('conn-status-text');
+            
+            // Determine WS URL based on current host. Fallback to localhost:3000 if running locally via file://
+            let wsUrl = window.location.protocol === 'https:' ? `wss://${window.location.host}` : `ws://${window.location.host}`;
+            if (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                wsUrl = 'ws://localhost:3000'; // Default to backend port
+            }
+
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    statusDot.className = 'w-2.5 h-2.5 rounded-full bg-green-500';
+                    statusText.textContent = 'Connected';
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleServerMessage(data);
+                };
+
+                ws.onclose = () => {
+                    statusDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+                    statusText.textContent = 'Disconnected. Retrying...';
+                    setTimeout(initWebSocket, 3000);
+                };
+
+                ws.onerror = (err) => {
+                    console.error('WebSocket Error', err);
+                };
+            } catch (e) {
+                console.warn("WebSocket connection failed. Run the Node.js server locally.");
+                statusDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+                statusText.textContent = 'Server Offline';
+                
+                // Demo mode for preview environments
+                myId = 'demo123';
+                myName = 'Preview-Guest';
+                document.getElementById('my-name-display').textContent = myName;
+                appendSystemMessage("Preview Mode: The WebSocket server is not running in this static sandbox. UI is active for demonstration. To experience real-time features, run server.js locally.");
+            }
+        }
+
+        function handleServerMessage(data) {
+            switch(data.type) {
+                case 'welcome':
+                    myId = data.id;
+                    myName = data.name;
+                    document.getElementById('my-name-display').textContent = myName;
+                    break;
+                case 'system':
+                    appendSystemMessage(data.message);
+                    break;
+                case 'chat':
+                    appendMessage(data);
+                    break;
+                case 'file':
+                    appendFileMessage(data);
+                    break;
+                case 'user-list':
+                    updateUsersList(data.users);
+                    break;
+                // WebRTC Signaling
+                case 'webrtc-offer':
+                    handleReceiveOffer(data);
+                    break;
+                case 'webrtc-answer':
+                    handleReceiveAnswer(data);
+                    break;
+                case 'webrtc-ice':
+                    handleReceiveIce(data);
+                    break;
+                case 'webrtc-reject':
+                    handleCallRejected(data);
+                    break;
+                case 'webrtc-end':
+                    cleanupCall();
+                    break;
+            }
+        }
+
+        // --- Chat UI Functions ---
+        function appendMessage(data) {
+            const isMe = data.senderId === myId;
+            const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const div = document.createElement('div');
+            div.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} msg-enter mb-4`;
+            
+            // Format text (convert URLs to links, newlines to <br>)
+            let text = data.content.replace(/\n/g, '<br>');
+            // Basic URL regex
+            text = text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="underline text-blue-200 hover:text-white">$1</a>');
+
+            div.innerHTML = `
+                <span class="text-[10px] text-gray-500 mx-1 mb-1">${isMe ? 'You' : escapeHtml(data.senderName)} • ${time}</span>
+                <div class="${isMe ? 'bg-blue-600 text-white rounded-l-2xl rounded-tr-2xl' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-r-2xl rounded-tl-2xl'} px-4 py-2 max-w-[85%] sm:max-w-[70%] shadow-sm text-sm break-words">
+                    ${text}
+                </div>
+            `;
+            chatMessages.appendChild(div);
+            scrollToBottom();
+        }
+
+        function appendFileMessage(data) {
+            const isMe = data.senderId === myId;
+            const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const div = document.createElement('div');
+            div.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} msg-enter mb-4`;
+            
+            const file = data.fileInfo;
+            const isImage = file.type.startsWith('image/');
+            const isAudio = file.type.startsWith('audio/');
+            
+            let contentHtml = '';
+            if (isImage) {
+                contentHtml = `<img src="${file.url}" alt="Shared image" class="max-w-full h-auto rounded-lg mb-2 max-h-60 cursor-pointer hover:opacity-90" onclick="window.open('${file.url}', '_blank')">`;
+            } else if (isAudio) {
+                contentHtml = `<audio controls src="${file.url}" class="w-64 max-w-full"></audio>`;
+            } else {
+                contentHtml = `
+                    <div class="flex items-center gap-3 bg-black/10 dark:bg-white/10 p-2 rounded-lg mb-1">
+                        <i class="fas fa-file-alt text-2xl"></i>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold truncate">${escapeHtml(file.name)}</p>
+                            <p class="text-xs opacity-75">${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            div.innerHTML = `
+                <span class="text-[10px] text-gray-500 mx-1 mb-1">${isMe ? 'You' : escapeHtml(data.senderName)} • ${time}</span>
+                <div class="${isMe ? 'bg-blue-600 text-white rounded-l-2xl rounded-tr-2xl' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-r-2xl rounded-tl-2xl'} p-2 max-w-[85%] sm:max-w-[75%] shadow-sm text-sm">
+                    ${contentHtml}
+                    <a href="${file.url}" target="_blank" download class="text-xs font-medium underline flex items-center justify-end gap-1 mt-1 opacity-90 hover:opacity-100">
+                        <i class="fas fa-download"></i> Download
+                    </a>
+                </div>
+            `;
+            chatMessages.appendChild(div);
+            scrollToBottom();
+        }
+
+        function appendSystemMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'text-center my-2 text-xs text-gray-500 dark:text-gray-400 italic msg-enter';
+            div.textContent = msg;
+            chatMessages.appendChild(div);
+            scrollToBottom();
+        }
+
+        function updateUsersList(users) {
+            usersList.innerHTML = '';
+            let count = 0;
+            
+            users.forEach(user => {
+                count++;
+                const isMe = user.id === myId;
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg group transition-colors';
+                
+                let callButtons = '';
+                if (!isMe) {
+                    callButtons = `
+                        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick="initiateCall('${user.id}', false, '${escapeHtml(user.name)}')" class="p-1.5 text-gray-500 hover:text-green-500 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-full" title="Voice Call">
+                                <i class="fas fa-phone"></i>
+                            </button>
+                            <button onclick="initiateCall('${user.id}', true, '${escapeHtml(user.name)}')" class="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-full" title="Video Call">
+                                <i class="fas fa-video"></i>
+                            </button>
+                        </div>
+                    `;
+                }
+
+                div.innerHTML = `
+                    <div class="flex items-center gap-2 overflow-hidden">
+                        <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200 truncate ${isMe ? 'italic font-bold' : ''}">${escapeHtml(user.name)} ${isMe ? '(You)' : ''}</span>
+                    </div>
+                    ${callButtons}
+                `;
+                usersList.appendChild(div);
+            });
+            
+            onlineCount.textContent = count;
+            mobileOnlineCount.textContent = count;
+        }
+
+        function sendTextMessage() {
+            const val = messageInput.value.trim();
+            if (!val || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            ws.send(JSON.stringify({ type: 'chat', content: val }));
+            messageInput.value = '';
+            messageInput.style.height = 'auto'; // reset height
+        }
+
+        function handleKeydown(e) {
+            // Auto resize textarea
+            e.target.style.height = 'auto';
+            e.target.style.height = (e.target.scrollHeight < 120 ? e.target.scrollHeight : 120) + 'px';
+
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendTextMessage();
+            }
+        }
+
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function promptRename() {
+            const newName = prompt("Enter new nickname:", myName);
+            if (newName && newName.trim() !== "" && newName !== myName) {
+                if(ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'rename', newName: newName.trim() }));
+                } else {
+                    myName = newName.trim();
+                    document.getElementById('my-name-display').textContent = myName;
+                }
+            }
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('hidden');
+            if(!sidebar.classList.contains('hidden')) {
+                sidebar.classList.add('absolute', 'z-40', 'h-full', 'shadow-2xl');
+            } else {
+                sidebar.classList.remove('absolute', 'z-40', 'h-full', 'shadow-2xl');
+            }
+        }
+
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+            isDarkMode = document.documentElement.classList.contains('dark');
+            const icon = document.getElementById('theme-icon');
+            icon.className = isDarkMode ? 'fas fa-sun text-yellow-400' : 'fas fa-moon';
+        }
+
+        function escapeHtml(unsafe) {
+            return String(unsafe)
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        async function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // 50MB Limit frontend check
+            if (file.size > 50 * 1024 * 1024) {
+                alert("Fail terlalu besar. Had maksimum ialah 50MB.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const progressBar = document.getElementById('upload-progress-bar');
+            const progressContainer = document.getElementById('upload-progress-container');
+            
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+
+            try {
+                // In a real environment, use XMLHttpRequest for upload progress. Using fetch for simplicity here.
+                // Assuming backend is at same host/port or localhost:3000
+                const uploadUrl = (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:3000/api/upload' : '/api/upload';
+                
+                // Simulate progress for UI
+                let progress = 0;
+                const intv = setInterval(() => {
+                    progress += 10;
+                    if(progress > 90) clearInterval(intv);
+                    progressBar.style.width = `${progress}%`;
+                }, 100);
+
+                const response = await fetch(uploadUrl, { method: 'POST', body: formData });
+                clearInterval(intv);
+                progressBar.style.width = '100%';
+                
+                if (!response.ok) throw new Error('Upload failed');
+                
+                const result = await response.json();
+                
+                // Send chat message with file info
+                if(ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ 
+                        type: 'file', 
+                        fileInfo: result 
+                    }));
+                } else {
+                    appendSystemMessage("Error: Not connected to server to share file link.");
+                }
+            } catch (err) {
+                console.error("Upload error", err);
+                appendSystemMessage("Upload failed. Make sure the Node.js backend is running.");
+            } finally {
+                setTimeout(() => { progressContainer.classList.add('hidden'); }, 1000);
+                e.target.value = ''; // Reset input
+            }
+        }
+
+        // --- Audio Recording ---
+        let mediaRecorder;
+        let audioChunks = [];
+        const micBtn = document.getElementById('mic-btn');
+        const recordingIndicator = document.getElementById('recording-indicator');
+
+        // Prevent default touch actions (like context menu)
+        micBtn.addEventListener('contextmenu', e => e.preventDefault());
+
+        const startRecording = async (e) => {
+            if(e) e.preventDefault();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                
+                mediaRecorder.onstop = async () => {
+                    stream.getTracks().forEach(track => track.stop());
+                    if (audioChunks.length === 0) return;
+                    
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); // webm is broadly supported for recorded audio
+                    const file = new File([audioBlob], `VoiceMessage-${Date.now()}.webm`, { type: 'audio/webm' });
+                    
+                    // Manually trigger upload
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    document.getElementById('file-input').files = dt.files;
+                    handleFileUpload({ target: document.getElementById('file-input') });
+                };
+
+                mediaRecorder.start();
+                micBtn.classList.add('text-red-500', 'bg-red-100', 'dark:bg-red-900/40');
+                recordingIndicator.classList.remove('hidden');
+            } catch (err) {
+                console.error("Mic access denied", err);
+                alert("Microphone permission denied.");
+            }
+        };
+
+        const stopRecording = (e) => {
+            if(e) e.preventDefault();
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                micBtn.classList.remove('text-red-500', 'bg-red-100', 'dark:bg-red-900/40');
+                recordingIndicator.classList.add('hidden');
+            }
+        };
+
+        micBtn.addEventListener('mousedown', startRecording);
+        micBtn.addEventListener('touchstart', startRecording, {passive: false});
+        window.addEventListener('mouseup', stopRecording);
+        window.addEventListener('touchend', stopRecording);
+
+        // --- WebRTC Video/Audio Calls ---
+
+        async function initiateCall(targetId, isVideo, targetName) {
+            if (peerConnection) {
+                alert("You are already in a call.");
+                return;
+            }
+            currentCallTarget = targetId;
+            isVideoCall = isVideo;
+
+            // Show outgoing call UI
+            showActiveCallUI(targetName, "Calling...", isVideo);
+
+            try {
+                // Get local media
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: isVideo ? { facingMode: "user" } : false, 
+                    audio: true 
+                });
+                
+                if (isVideo) {
+                    const localVid = document.getElementById('local-video');
+                    localVid.srcObject = localStream;
+                    localVid.classList.remove('hidden');
+                    document.getElementById('btn-toggle-cam').classList.remove('hidden');
+                }
+
+                // Setup Peer Connection
+                createPeerConnection();
+
+                // Add local tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                // Create and send offer
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+                ws.send(JSON.stringify({
+                    type: 'webrtc-offer',
+                    targetId: targetId,
+                    isVideo: isVideo,
+                    sdp: peerConnection.localDescription
+                }));
+
+            } catch (err) {
+                console.error("Error accessing media devices.", err);
+                alert("Cannot access camera/microphone.");
+                cleanupCall();
+            }
+        }
+
+        // When receiving an offer
+        function handleReceiveOffer(data) {
+            if (peerConnection) {
+                // Busy
+                ws.send(JSON.stringify({ type: 'webrtc-reject', targetId: data.senderId, reason: 'Busy' }));
+                return;
+            }
+            
+            currentCallTarget = data.senderId;
+            isVideoCall = data.isVideo;
+
+            // Show incoming call modal
+            const modal = document.getElementById('incoming-call-modal');
+            document.getElementById('incoming-caller-name').textContent = escapeHtml(data.senderName);
+            document.getElementById('incoming-call-type').textContent = `Incoming ${isVideoCall ? 'Video' : 'Voice'} Call...`;
+            document.getElementById('incoming-call-icon').className = isVideoCall ? 'fas fa-video text-3xl text-blue-600' : 'fas fa-phone text-3xl text-blue-600';
+            modal.classList.remove('hidden');
+
+            // Store SDP temporarily
+            window.incomingSdp = data.sdp;
+        }
+
+        async function acceptCall() {
+            document.getElementById('incoming-call-modal').classList.add('hidden');
+            showActiveCallUI("Connecting...", "Connecting...", isVideoCall);
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: isVideoCall ? { facingMode: "user" } : false, 
+                    audio: true 
+                });
+
+                if (isVideoCall) {
+                    const localVid = document.getElementById('local-video');
+                    localVid.srcObject = localStream;
+                    localVid.classList.remove('hidden');
+                    document.getElementById('btn-toggle-cam').classList.remove('hidden');
+                }
+
+                createPeerConnection();
+                
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(window.incomingSdp));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+
+                ws.send(JSON.stringify({
+                    type: 'webrtc-answer',
+                    targetId: currentCallTarget,
+                    sdp: peerConnection.localDescription
+                }));
+
+            } catch (err) {
+                console.error("Error accepting call", err);
+                rejectCall();
+            }
+        }
+
+        function rejectCall() {
+            document.getElementById('incoming-call-modal').classList.add('hidden');
+            if (currentCallTarget) {
+                ws.send(JSON.stringify({ type: 'webrtc-reject', targetId: currentCallTarget, reason: 'Declined' }));
+                currentCallTarget = null;
+            }
+        }
+
+        // When receiving an answer
+        async function handleReceiveAnswer(data) {
+            if (!peerConnection) return;
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                document.getElementById('active-call-status').textContent = "Connected";
+                document.getElementById('active-call-status').className = "text-xs text-green-400";
+                startCallTimer();
+            } catch (err) {
+                console.error("Error setting remote desc", err);
+            }
+        }
+
+        // ICE Candidate handling
+        async function handleReceiveIce(data) {
+            if (peerConnection && data.candidate) {
+                try {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (e) {
+                    console.error("Error adding received ice candidate", e);
+                }
+            }
+        }
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'webrtc-ice',
+                        targetId: currentCallTarget,
+                        candidate: event.candidate
+                    }));
+                }
+            };
+
+            peerConnection.ontrack = event => {
+                const remoteVid = document.getElementById('remote-video');
+                const audioPlaceholder = document.getElementById('audio-call-placeholder');
+                
+                if (remoteStream !== event.streams[0]) {
+                    remoteStream = event.streams[0];
+                    remoteVid.srcObject = remoteStream;
+                    
+                    if (isVideoCall) {
+                        remoteVid.classList.remove('hidden');
+                        audioPlaceholder.classList.add('hidden');
+                    } else {
+                        remoteVid.classList.add('hidden');
+                        audioPlaceholder.classList.remove('hidden');
+                        // For audio call, we still play the remote stream through the hidden video element (or an audio element)
+                        remoteVid.play().catch(e => console.error("Audio play error", e));
+                    }
+                }
+                
+                document.getElementById('active-call-status').textContent = "Connected";
+                document.getElementById('active-call-status').className = "text-xs text-green-400";
+                startCallTimer(); // Ensure timer starts if answer was missed
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+                    cleanupCall();
+                }
+            };
+        }
+
+        function handleCallRejected(data) {
+            alert(`Call rejected: ${data.reason}`);
+            cleanupCall();
+        }
+
+        function endCall() {
+            if (currentCallTarget) {
+                ws.send(JSON.stringify({ type: 'webrtc-end', targetId: currentCallTarget }));
+            }
+            cleanupCall();
+        }
+
+        function cleanupCall() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            
+            document.getElementById('local-video').srcObject = null;
+            document.getElementById('remote-video').srcObject = null;
+            
+            document.getElementById('active-call-modal').classList.add('hidden');
+            document.getElementById('incoming-call-modal').classList.add('hidden');
+            document.getElementById('btn-toggle-cam').classList.add('hidden');
+            
+            currentCallTarget = null;
+            stopCallTimer();
+        }
+
+        // --- Call UI Toggles ---
+        function showActiveCallUI(name, status, isVideo) {
+            document.getElementById('active-call-name').textContent = name;
+            document.getElementById('active-call-status').textContent = status;
+            document.getElementById('active-call-status').className = "text-xs text-yellow-400"; // Connecting
+            document.getElementById('active-call-modal').classList.remove('hidden');
+            
+            if (isVideo) {
+                document.getElementById('audio-call-placeholder').classList.add('hidden');
+            } else {
+                document.getElementById('audio-call-placeholder').classList.remove('hidden');
+            }
+            
+            // Reset buttons
+            document.getElementById('btn-toggle-mic').innerHTML = '<i class="fas fa-microphone text-xl"></i>';
+            document.getElementById('btn-toggle-mic').classList.replace('bg-red-600', 'bg-gray-700');
+            document.getElementById('btn-toggle-cam').innerHTML = '<i class="fas fa-video text-xl"></i>';
+            document.getElementById('btn-toggle-cam').classList.replace('bg-red-600', 'bg-gray-700');
+            
+            document.getElementById('call-timer').textContent = "00:00";
+        }
+
+        function toggleMic() {
+            if (localStream) {
+                const audioTrack = localStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioTrack.enabled = !audioTrack.enabled;
+                    const btn = document.getElementById('btn-toggle-mic');
+                    if (audioTrack.enabled) {
+                        btn.innerHTML = '<i class="fas fa-microphone text-xl"></i>';
+                        btn.classList.replace('bg-red-600', 'bg-gray-700');
+                    } else {
+                        btn.innerHTML = '<i class="fas fa-microphone-slash text-xl"></i>';
+                        btn.classList.replace('bg-gray-700', 'bg-red-600');
+                    }
+                }
+            }
+        }
+
+        function toggleCam() {
+            if (localStream && isVideoCall) {
+                const videoTrack = localStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.enabled = !videoTrack.enabled;
+                    const btn = document.getElementById('btn-toggle-cam');
+                    if (videoTrack.enabled) {
+                        btn.innerHTML = '<i class="fas fa-video text-xl"></i>';
+                        btn.classList.replace('bg-red-600', 'bg-gray-700');
+                    } else {
+                        btn.innerHTML = '<i class="fas fa-video-slash text-xl"></i>';
+                        btn.classList.replace('bg-gray-700', 'bg-red-600');
+                    }
+                }
+            }
+        }
+
+        // --- Call Timer ---
+        function startCallTimer() {
+            if (callTimerInterval) return; // Already running
+            callSeconds = 0;
+            const timerEl = document.getElementById('call-timer');
+            callTimerInterval = setInterval(() => {
+                callSeconds++;
+                const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+                const secs = String(callSeconds % 60).padStart(2, '0');
+                timerEl.textContent = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function stopCallTimer() {
+            if (callTimerInterval) {
+                clearInterval(callTimerInterval);
+                callTimerInterval = null;
+            }
+            callSeconds = 0;
+        }
+
+        // Initialize App
+        window.onload = () => {
+            // Set initial theme based on system preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+                isDarkMode = true;
+                document.getElementById('theme-icon').className = 'fas fa-sun text-yellow-400';
+            }
+            initWebSocket();
+        };
+    </script>
+</body>
+</html>
